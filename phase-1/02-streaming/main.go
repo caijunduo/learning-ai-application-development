@@ -31,6 +31,11 @@ type StreamChunk struct {
 		} `json:"delta"`
 		FinishReason *string `json:"finish_reason"`
 	} `json:"choices"`
+	Usage *struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+		TotalTokens      int `json:"total_tokens"`
+	} `json:"usage"`
 }
 
 func main() {
@@ -63,6 +68,11 @@ func main() {
 
 	// 逐行读取 SSE 事件流
 	reader := bufio.NewReader(resp.Body)
+	var lastUsage *struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+		TotalTokens      int `json:"total_tokens"`
+	}
 	for {
 		line, err := reader.ReadString('\n')
 		if err != nil {
@@ -97,5 +107,15 @@ func main() {
 			// 实时打印每个 chunk 的内容
 			fmt.Print(chunk.Choices[0].Delta.Content)
 		}
+
+		// 流式最后一个 chunk 会附带 usage 信息
+		if chunk.Usage != nil {
+			lastUsage = chunk.Usage
+		}
+	}
+
+	if lastUsage != nil {
+		fmt.Printf("\n📊 Token 用量: prompt=%d, completion=%d, total=%d\n",
+			lastUsage.PromptTokens, lastUsage.CompletionTokens, lastUsage.TotalTokens)
 	}
 }

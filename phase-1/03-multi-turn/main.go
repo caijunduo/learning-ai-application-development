@@ -27,9 +27,14 @@ type ChatResponse struct {
 	Choices []struct {
 		Message Message `json:"message"`
 	} `json:"choices"`
+	Usage struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+		TotalTokens      int `json:"total_tokens"`
+	} `json:"usage"`
 }
 
-func callAPI(messages []Message, apiKey string) (string, error) {
+func callAPI(messages []Message, apiKey string) (string, int, int, int, error) {
 	req := ChatRequest{
 		Model:    "deepseek-v4-flash",
 		Messages: messages,
@@ -43,7 +48,7 @@ func callAPI(messages []Message, apiKey string) (string, error) {
 
 	resp, err := http.DefaultClient.Do(httpReq)
 	if err != nil {
-		return "", err
+		return "", 0, 0, 0, err
 	}
 	defer resp.Body.Close()
 
@@ -53,9 +58,13 @@ func callAPI(messages []Message, apiKey string) (string, error) {
 	json.Unmarshal(respBody, &result)
 
 	if len(result.Choices) > 0 {
-		return result.Choices[0].Message.Content, nil
+		return result.Choices[0].Message.Content,
+			result.Usage.PromptTokens,
+			result.Usage.CompletionTokens,
+			result.Usage.TotalTokens,
+			nil
 	}
-	return "", fmt.Errorf("没有返回结果: %s", string(respBody))
+	return "", 0, 0, 0, fmt.Errorf("没有返回结果: %s", string(respBody))
 }
 
 func main() {
@@ -92,7 +101,7 @@ func main() {
 		messages = append(messages, Message{Role: "user", Content: userInput})
 
 		// 把完整历史发给模型
-		reply, err := callAPI(messages, apiKey)
+		reply, promptTokens, completionTokens, totalTokens, err := callAPI(messages, apiKey)
 		if err != nil {
 			fmt.Println("调用失败:", err)
 			continue
@@ -101,7 +110,9 @@ func main() {
 		// 把模型回复也加入历史
 		messages = append(messages, Message{Role: "assistant", Content: reply})
 
-		fmt.Printf("AI: %s\n\n", reply)
+		fmt.Printf("AI: %s\n", reply)
+		fmt.Printf("📊 Token 用量: prompt=%d, completion=%d, total=%d\n\n",
+			promptTokens, completionTokens, totalTokens)
 	}
 
 	fmt.Println("=== 对话结束 ===")

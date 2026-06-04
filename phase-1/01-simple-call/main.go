@@ -26,6 +26,11 @@ type ChatResponse struct {
 	Choices []struct {
 		Message Message `json:"message"`
 	} `json:"choices"`
+	Usage struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+		TotalTokens      int `json:"total_tokens"`
+	} `json:"usage"`
 }
 
 func main() {
@@ -62,6 +67,11 @@ func main() {
 
 	if len(result.Choices) > 0 {
 		fmt.Println(result.Choices[0].Message.Content)
+		fmt.Println()
+		fmt.Printf("📊 Token 用量: prompt=%d, completion=%d, total=%d\n",
+			result.Usage.PromptTokens,
+			result.Usage.CompletionTokens,
+			result.Usage.TotalTokens)
 	} else {
 		fmt.Println("没有返回结果，原始响应:", string(respBody))
 	}
