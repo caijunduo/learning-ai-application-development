@@ -74,47 +74,98 @@ func main() {
 		os.Exit(1)
 	}
 
-	// 维护一个 messages 数组，这就是模型的"记忆"
+	systemPrompt := `角色：Go代码审查官
+约束：只需要审查Go代码即可，其他无关的事情直接回复无法处理
+背景：只审查Go1.x.x版本的代码
+流程：
+1. 先逐行阅读代码，站在全局视角看代码，标注所有涉及错误处理或逻辑错误的位置
+2. 对照Go官方错误处理规范，判断每次是否合规
+3. 汇总发现，区分好的写法和问题写法
+4. 按照输出格式生成报告
+任务：审查Go代码的安全性、错误处理、代码规范等，重点关注错误处理是否规范
+输出：按顺序输出【审查报告】【好的处理】【坏的处理】`
+
 	messages := []Message{
-		{Role: "system", Content: "你是一个简洁的助手，回答尽量简短。"},
+		{Role: "system", Content: systemPrompt},
 	}
+
+	fmt.Println("=== Go 代码审查工具 ===")
+	fmt.Println("请输入 Go 代码（输入空行结束，输入 'quit' 退出）:")
+	fmt.Println()
 
 	scanner := bufio.NewScanner(os.Stdin)
 
-	fmt.Println("=== 多轮对话（共 3 轮）===")
-	fmt.Println()
+	for {
+		fmt.Print(">>> 请输入 Go 代码:\n")
 
-	for turn := 1; turn <= 3; turn++ {
-		fmt.Printf("--- 第 %d 轮 ---\n", turn)
-		fmt.Print("你: ")
-
-		if !scanner.Scan() {
-			break
+		// 读取多行代码，空行结束
+		var codeLines []string
+		for scanner.Scan() {
+			line := scanner.Text()
+			if line == "" {
+				break
+			}
+			if strings.TrimSpace(line) == "quit" {
+				fmt.Println("再见！")
+				return
+			}
+			codeLines = append(codeLines, line)
 		}
-		userInput := strings.TrimSpace(scanner.Text())
-		if userInput == "" {
-			turn-- // 空输入不计轮次
+
+		code := strings.TrimSpace(strings.Join(codeLines, "\n"))
+		if code == "" {
 			continue
 		}
 
-		// 把用户消息加入历史
-		messages = append(messages, Message{Role: "user", Content: userInput})
+		// 快速检测：如果不是 Go 代码，直接跳过
+		if !looksLikeGo(code) {
+			fmt.Println("⚠️  这看起来不是 Go 代码，请输入 Go 代码。")
+			fmt.Println()
+			continue
+		}
 
-		// 把完整历史发给模型
-		reply, promptTokens, completionTokens, totalTokens, err := callAPI(messages, apiKey)
+		// 构建审查请求
+		reviewMessages := append(messages, Message{
+			Role:    "user",
+			Content: fmt.Sprintf("请审查以下 Go 代码：\n\n```go\n%s\n```", code),
+		})
+
+		reply, promptTokens, completionTokens, totalTokens, err := callAPI(reviewMessages, apiKey)
 		if err != nil {
 			fmt.Println("调用失败:", err)
 			continue
 		}
 
-		// 把模型回复也加入历史
-		messages = append(messages, Message{Role: "assistant", Content: reply})
-
-		fmt.Printf("AI: %s\n", reply)
-		fmt.Printf("📊 Token 用量: prompt=%d, completion=%d, total=%d\n\n",
+		fmt.Println()
+		fmt.Println(reply)
+		fmt.Println()
+		fmt.Printf("📊 Token 用量: prompt=%d, completion=%d, total=%d\n",
 			promptTokens, completionTokens, totalTokens)
-	}
+		fmt.Println()
 
-	fmt.Println("=== 对话结束 ===")
-	fmt.Printf("\n最终 messages 数组长度: %d 条\n", len(messages))
+		// 询问是否继续
+		fmt.Print(">>> 继续审查？(直接回车继续 / 输入 quit 退出): ")
+		if !scanner.Scan() {
+			break
+		}
+		choice := strings.TrimSpace(scanner.Text())
+		if choice == "quit" {
+			fmt.Println("再见！")
+			return
+		}
+		fmt.Println()
+	}
+}
+
+// looksLikeGo 简单判断输入是否像 Go 代码
+func looksLikeGo(code string) bool {
+	code = strings.TrimSpace(code)
+	// 检查是否包含 Go 关键字特征
+	goKeywords := []string{"package ", "func ", "import ", "type ", "var ", "const "}
+	for _, kw := range goKeywords {
+		if strings.Contains(code, kw) {
+			return true
+		}
+	}
+	return false
 }
